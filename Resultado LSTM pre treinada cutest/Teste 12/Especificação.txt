@@ -1,0 +1,13 @@
+
+PRÉ-TREINAMENTO SOMENTE DFO
+TRAJETÓRIAS: 3
+PASSOS: 50
+EPOCHS: 2000 *
+JANELAS: 7
+
+TESTE
+JANELAS: 7
+LIMIAR DE INÍCIO: 7
+ITERAÇÕES ONLINE: 15 *
+
+objetivo: Retreinei o modelo com 15 iterações online para ver o resultado, resultado ruim.

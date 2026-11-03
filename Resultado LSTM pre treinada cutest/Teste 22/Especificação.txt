@@ -1,0 +1,12 @@
+PRÉ-TREINAMENTO SOMENTE DFO
+TRAJETÓRIAS: 3
+PASSOS: 50
+EPOCHS: 50 *
+JANELAS: 7
+
+TESTE
+JANELAS: 7
+LIMIAR DE INÍCIO: 7
+ITERAÇÕES ONLINE: 1*
+
+objetivo: Foi retreinado o modelo usando validação com 50 épocas apenas usando gradiente, o resultado foi o segundo melhor até momento

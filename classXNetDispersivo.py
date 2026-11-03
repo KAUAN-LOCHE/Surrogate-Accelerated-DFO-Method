@@ -1,0 +1,238 @@
+#!/usr/bin/python3
+# ----------------------------------- #
+#  XNet (Cauchy) Surrogate Model      #
+#       (Apenas Dispersivo)           #
+# ----------------------------------- #
+
+import numpy as np
+from classModel import MyModel
+
+class MyXNet(MyModel):
+    
+    def __init__(self, n, num_basis, f0, x0, simplexMemory, regParam, maxIterTraining):
+        super().__init__(n, num_basis, f0, x0, simplexMemory)
+
+        self.regParam = regParam
+        self.maxIterTraining = maxIterTraining
+        
+        m = self.netDim[1]
+        
+        # --- INICIALIZAÇÃO DOS PARÂMETROS ---
+        self.C = np.random.uniform(low=-1.0, high=1.0, size=(m, n))
+        self.d = np.ones(m) * 1.0
+
+        self.delta1 = np.random.uniform(low=-1.0, high=1.0, size=(m, n))
+        # delta2 removido para deixar apenas o termo dispersivo
+        self.W = np.random.uniform(low=-1.0, high=1.0, size=(m,))
+        
+        # Conexão Residual Global (Linear)
+        self.beta = np.zeros(n)
+        self.b = np.zeros(1)
+
+    # 1. FORWARD PASS: f(x)
+    def __call__(self, x):
+        is_single = len(np.shape(x)) == 1
+        if is_single:
+            x = x[np.newaxis, :]
+            
+        diff = x[:, np.newaxis, :] - self.C       
+        sq_dist = np.sum(diff**2, axis=-1)        
+        
+        H = 1.0 / (sq_dist + self.d**2 + 1e-8)           
+        P1 = np.sum(self.delta1 * diff, axis=-1)  
+        
+        # Multiplica por W e soma a Conexão Residual Global (beta * x)
+        val = np.sum(self.W * P1 * H, axis=-1) + np.sum(x * self.beta, axis=-1) + self.b
+        
+        return np.squeeze(val, axis=0) if is_single else val
+
+    # 2. GRADIENTE DO MODELO 
+    def grad(self, x):
+        is_single = len(np.shape(x)) == 1
+        if is_single:
+            x = x[np.newaxis, :]
+            
+        diff = x[:, np.newaxis, :] - self.C
+        sq_dist = np.sum(diff**2, axis=-1)
+        H = 1.0 / (sq_dist + self.d**2 + 1e-8)
+        
+        P1 = np.sum(self.delta1 * diff, axis=-1)
+        
+        dfdx = self.W[np.newaxis, :, np.newaxis] * (
+               self.delta1[np.newaxis, :, :] * H[:, :, np.newaxis] \
+               - 2.0 * P1[:, :, np.newaxis] * (H**2)[:, :, np.newaxis] * diff
+        )
+               
+        # Adiciona o vetor beta ao gradiente analítico da rede
+        val = np.sum(dfdx, axis=1) + self.beta
+        
+        return np.squeeze(val, axis=0) if is_single else val
+
+    # 3. PERDA (MSE + Sobolev Learning + Regularização)
+    def evalLoss(self, fullWeight):
+        n, m = self.netDim[:2]
+        tl = self.trainLength
+        
+        C = np.reshape(fullWeight[:m*n], (m, n))
+        d = fullWeight[m*n : m*n+m]
+        delta1 = np.reshape(fullWeight[m*n+m : 2*m*n+m], (m, n))
+        W = fullWeight[2*m*n+m : 2*m*n+2*m]
+        beta = fullWeight[2*m*n+2*m : 2*m*n+2*m+n]
+        b = fullWeight[-1]
+
+        # --- Perda Padrão ---
+        X = self.trainInput[:tl[0], :]
+        Y = self.trainOutput[:tl[0]]
+        
+        diff = X[:, np.newaxis, :] - C
+        sq_dist = np.sum(diff**2, axis=-1)
+        H = 1.0 / (sq_dist + d**2 + 1e-8)
+        
+        P1 = np.sum(delta1 * diff, axis=-1)
+        pred = np.sum(W * P1 * H, axis=-1) + np.sum(X * beta, axis=-1) + b
+        loss = np.mean((pred - Y)**2)
+
+        # --- Perda Sobolev ---
+        if tl[1] > 0:
+            X_sob = self.trainInputDerivative[:tl[1], :]
+            Y_sob = self.trainOutputDerivative[:tl[1], :]
+            
+            diff_sob = X_sob[:, np.newaxis, :] - C
+            sq_dist_sob = np.sum(diff_sob**2, axis=-1)
+            H_sob = 1.0 / (sq_dist_sob + d**2 + 1e-8)
+            
+            P1_sob = np.sum(delta1 * diff_sob, axis=-1)
+            
+            pred_grad = np.sum(W[np.newaxis, :, np.newaxis] * (
+                               delta1[np.newaxis, :, :] * H_sob[:, :, np.newaxis] \
+                               - 2.0 * P1_sob[:, :, np.newaxis] * (H_sob**2)[:, :, np.newaxis] * diff_sob
+                               ), axis=1) + beta
+            
+            loss += np.mean(np.sum((pred_grad - Y_sob)**2, axis=-1))
+
+        if self.regParam > 0:
+            loss += self.regParam * np.linalg.norm(fullWeight)**2
+
+        return loss
+
+    # 4. BACKPROPAGATION ANALÍTICO PARA O LM-BFGS
+    def evalGradLoss(self, fullWeight):
+        n, m = self.netDim[:2]
+        tl = self.trainLength
+        gradLoss = np.zeros_like(fullWeight)
+        
+        C = np.reshape(fullWeight[:m*n], (m, n))
+        d_val = fullWeight[m*n : m*n+m]
+        delta1 = np.reshape(fullWeight[m*n+m : 2*m*n+m], (m, n))
+        W = fullWeight[2*m*n+m : 2*m*n+2*m]
+        beta = fullWeight[2*m*n+2*m : 2*m*n+2*m+n]
+        b = fullWeight[-1]
+
+        # Forward
+        X = self.trainInput[:tl[0], :]
+        Y = self.trainOutput[:tl[0]]
+        diff = X[:, np.newaxis, :] - C
+        sq_dist = np.sum(diff**2, axis=-1)
+        H = 1.0 / (sq_dist + d_val**2 + 1e-8)
+        P1 = np.sum(delta1 * diff, axis=-1)
+        Phi = P1 * H
+        pred = np.sum(W * Phi, axis=-1) + np.sum(X * beta, axis=-1) + b
+        
+        err = 2.0 / tl[0] * (pred - Y) 
+        
+        # --- Gradientes Base ---
+        db = np.sum(err)
+        dbeta = np.sum(err[:, np.newaxis] * X, axis=0)
+        dW = np.sum(err[:, np.newaxis] * Phi, axis=0)
+        
+        err_W = err[:, np.newaxis] * W
+        ddelta1 = np.sum((err_W * H)[:, :, np.newaxis] * diff, axis=0)
+        
+        dHdd = -2.0 * d_val * (H**2)
+        dd = np.sum(err_W * P1 * dHdd, axis=0)
+        
+        dC = np.sum(err_W[:, :, np.newaxis] * \
+             (-delta1[np.newaxis, :, :] * H[:, :, np.newaxis] \
+              + 2.0 * P1[:, :, np.newaxis] * (H**2)[:, :, np.newaxis] * diff), axis=0)
+
+        # --- Gradientes Sobolev ---
+        if tl[1] > 0:
+            X_sob = self.trainInputDerivative[:tl[1], :]
+            Y_sob = self.trainOutputDerivative[:tl[1], :]
+            
+            diff_s = X_sob[:, np.newaxis, :] - C
+            sq_dist_s = np.sum(diff_s**2, axis=-1)
+            H_s = 1.0 / (sq_dist_s + d_val**2 + 1e-8)
+            P1_s = np.sum(delta1 * diff_s, axis=-1)
+            
+            dfdx_s = delta1[np.newaxis, :, :] * H_s[:, :, np.newaxis] \
+                     - 2.0 * P1_s[:, :, np.newaxis] * (H_s**2)[:, :, np.newaxis] * diff_s
+                     
+            pred_grad = np.sum(W[np.newaxis, :, np.newaxis] * dfdx_s, axis=1) + beta
+            err_sob = 2.0 / tl[1] * (pred_grad - Y_sob)
+            
+            # Atualização dos gradientes com as informações de Sobolev
+            dbeta += np.sum(err_sob, axis=0)
+            dW += np.sum(err_sob[:, np.newaxis, :] * dfdx_s, axis=(0, 2))
+            
+            err_sob_W = err_sob[:, np.newaxis, :] * W[np.newaxis, :, np.newaxis]
+            
+            sum_err_diff_W = np.sum(err_sob_W * diff_s, axis=-1) 
+            sum_err_delta_W = np.sum(err_sob_W * delta1[np.newaxis, :, :], axis=-1)
+            
+            d_val_br = d_val[np.newaxis, :, np.newaxis]
+            dd += np.sum(err_sob_W * (
+                -2.0 * d_val_br * (H_s**2)[:, :, np.newaxis] * delta1[np.newaxis, :, :] 
+                + 8.0 * d_val_br * P1_s[:, :, np.newaxis] * (H_s**3)[:, :, np.newaxis] * diff_s
+            ), axis=(0,2))
+            
+            ddelta1 += np.sum(err_sob_W * H_s[:, :, np.newaxis], axis=0) \
+                       - np.sum(2.0 * (H_s**2)[:, :, np.newaxis] * sum_err_diff_W[:, :, np.newaxis] * diff_s, axis=0)
+            
+            dC += np.sum(
+                2.0 * (H_s**2)[:, :, np.newaxis] * (delta1[np.newaxis, :, :] * sum_err_diff_W[:, :, np.newaxis] + diff_s * sum_err_delta_W[:, :, np.newaxis])
+                - 8.0 * P1_s[:, :, np.newaxis] * (H_s**3)[:, :, np.newaxis] * diff_s * sum_err_diff_W[:, :, np.newaxis]
+                + 2.0 * P1_s[:, :, np.newaxis] * (H_s**2)[:, :, np.newaxis] * err_sob_W,
+                axis=0
+            )
+
+        # --- Regularização ---
+        if self.regParam > 0:
+            dC += 2.0 * self.regParam * C
+            dd += 2.0 * self.regParam * d_val
+            ddelta1 += 2.0 * self.regParam * delta1
+            dW += 2.0 * self.regParam * W
+            dbeta += 2.0 * self.regParam * beta
+            db += 2.0 * self.regParam * b
+
+        # Empacota gradientes (agora com tamanho 2mn + 2m + n + 1)
+        gradLoss[:m*n] = dC.flatten()
+        gradLoss[m*n : m*n+m] = dd
+        gradLoss[m*n+m : 2*m*n+m] = ddelta1.flatten()
+        gradLoss[2*m*n+m : 2*m*n+2*m] = dW
+        gradLoss[2*m*n+2*m : 2*m*n+2*m+n] = dbeta
+        gradLoss[-1] = db
+
+        return gradLoss
+
+    def train(self, rtolTraining):
+        n, m = self.netDim[:2]
+        
+        fullWeight = np.zeros(2*m*n + 2*m + n + 1)
+        fullWeight[:m*n] = np.reshape(self.C, (m*n,))
+        fullWeight[m*n : m*n+m] = self.d
+        fullWeight[m*n+m : 2*m*n+m] = np.reshape(self.delta1, (m*n,))
+        fullWeight[2*m*n+m : 2*m*n+2*m] = self.W
+        fullWeight[2*m*n+2*m : 2*m*n+2*m+n] = self.beta
+        fullWeight[-1] = self.b[0] if isinstance(self.b, np.ndarray) else self.b
+
+        gradLossNorm, fullWeight = super().train(fullWeight, rtolTraining)
+
+        self.C = np.reshape(fullWeight[:m*n], (m, n))
+        self.d = fullWeight[m*n : m*n+m]
+        self.delta1 = np.reshape(fullWeight[m*n+m : 2*m*n+m], (m, n))
+        self.W = fullWeight[2*m*n+m : 2*m*n+2*m]
+        self.beta = fullWeight[2*m*n+2*m : 2*m*n+2*m+n]
+        self.b = fullWeight[-1]
+
+        return gradLossNorm

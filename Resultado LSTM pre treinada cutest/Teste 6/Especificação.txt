@@ -1,0 +1,13 @@
+
+PRÉ-TREINAMENTO
+TRAJETÓRIAS: 3
+PASSOS: 50
+EPOCHS: 1000 *
+JANELAS: 7
+
+TESTE
+JANELAS: 7
+LIMIAR DE INÍCIO: 7
+ITERAÇÕES ONLINE: 3
+
+objetivo: Aumentei as épocas para 1000 para analisar se com muito mais épocas ele se comporta melhor ou pior em relação a 150 e validar a necessidade ou não de um treinamento mais robusto, pois com 150 não foi possível ver.

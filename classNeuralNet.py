@@ -131,7 +131,7 @@ class MyNeuralNet(MyModel):
         fullWeight[:m*n] = np.reshape(self.W1,(m*n,))
         fullWeight[m*n:m*(n+1)] = self.b1
         fullWeight[-m-1:-1] = self.W2
-        fullWeight[-1] = self.b2
+        fullWeight[-1] = self.b2[0] if isinstance(self.b2, np.ndarray) else self.b2
 
         gradLossNorm, fullWeight = super().train(fullWeight,rtolTraining)
 

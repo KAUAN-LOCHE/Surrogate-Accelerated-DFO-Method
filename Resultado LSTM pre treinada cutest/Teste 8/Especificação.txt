@@ -1,0 +1,13 @@
+
+PRÉ-TREINAMENTO SOMENTE DFO
+TRAJETÓRIAS: 3
+PASSOS: 50
+EPOCHS: 1000 *
+JANELAS: 7
+
+TESTE
+JANELAS: 7
+LIMIAR DE INÍCIO: 7
+ITERAÇÕES ONLINE: 3 *
+
+objetivo: Retreinamento para gerar dados somente por meio de aproximações de gradiente DFO, assim o modelo pode se aproximar mais da ideia de não se ter derivadas analíticas. Ainda treinando 

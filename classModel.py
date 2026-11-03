@@ -157,6 +157,7 @@ class MyModel():
 
             # Stop the method earlier if the training takes too much time
             if perf_counter()-tStart > 20:
+                print("Training time exceeded 20 seconds, stopping the training process")
                 break
 
 
@@ -185,6 +186,7 @@ class MyModel():
             
             # Check if new point is almost stationnary
             if gradLossNorm <= atolTraining:
+                print("Training process stopped because the gradient norm is below the tolerance")
                 break
 
             # Compute LM-BFGS search direction
@@ -199,5 +201,6 @@ class MyModel():
                 z = z + (a[i] - rho[i] * np.dot(Y[(k-i)%M,:],z)) * S[(k-i)%M,:]
             searchDirection = -z
 
+        print("Training process finished with " + str(k+1) + " iterations and gradient norm " + str(gradLossNorm))
         return gradLossNorm, fullWeight
     

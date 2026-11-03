@@ -1,0 +1,13 @@
+PRÉ-TREINAMENTO SOMENTE DFO
+TRAJETÓRIAS: 2
+PASSOS: 50
+EPOCHS: 100 * 
+JANELAS: 7
+
+TESTE
+JANELAS: 7
+LIMIAR DE INÍCIO: 7
+ITERAÇÕES ONLINE: 1 * 1e-4
+
+objetivo: Teste apenas trajetórias DFO com 100 épocas . Bom!
+V3
