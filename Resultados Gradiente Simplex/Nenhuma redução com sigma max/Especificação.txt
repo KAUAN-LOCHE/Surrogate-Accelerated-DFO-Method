@@ -1,3 +1,0 @@
-Teste com nehuma redução de passo na extrapolação com sigma max 1/sigmaMax  
-
- Versão 11

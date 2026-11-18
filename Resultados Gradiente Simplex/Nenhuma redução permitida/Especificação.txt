@@ -1,3 +1,0 @@
-Teste com gradiente Simplex sem permitir ao menos uma redução do valor, apenas o teste puro com descida 1/L. Percebe-se o modelo muit ruim comparado à MLP pois os passos foram minimamente aceitos.
-
-Versão 10

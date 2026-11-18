@@ -1,3 +1,0 @@
-Permitidas 2 descidas de passo por iteração de extrapolação
-
-versão 12
